@@ -14,7 +14,9 @@ import os
 class Agent:
 
     def __init__(self,
+                 input_shape,
                  trained_model_dir="None",
+                 input_image=True,
                  state_space=2,
                  action_space=3,
                  e_greedy=0.8,
@@ -23,13 +25,15 @@ class Agent:
                  weight_save_dir="./weight/Q_net.h5",
                  priority_replay=True,
                  memory_size=2048,
-                 multi_step_num=5,
+                 batch_size=64,
+                 multi_step_num=10,
                  ):
-
+        self.input_image = input_image
+        self.input_shape = input_shape
         self.action_space = action_space
         self.state_space = state_space
         self.e_greedy = e_greedy
-        self.batch_size = 64
+        self.batch_size = batch_size
         self.reward_decay = reward_decay
         self.learning_rate = learning_rate
         self.weight_save_dir = weight_save_dir
@@ -53,40 +57,74 @@ class Agent:
 
         # 初始化模型
         self.network = self.build_model()
-        self.targetQ_network = self.build_model()
+        # 可以把结构保存起来
+        config = self.network.get_config()
+        self.targetQ_network = keras.Model.from_config(config)  # config只能用keras.Model的这个api
 
         if os.path.isfile(trained_model_dir):  # 导入模型参数
             self.network.load_weights(trained_model_dir)
             self.targetQ_network.load_weights(trained_model_dir)
         else:
-            self.network.save_weights('./weight/init_weights.h5')
-            self.targetQ_network.load_weights('./weight/init_weights.h5')   # 两个网络初始权重相同
+            weights = self.network.get_weights()  # 可以把参数保存结合起来
+            self.targetQ_network.set_weights(weights)   # 两个网络初始权重相同
 
     # Dueling DQN
     def build_model(self):
-        # 构建网络
-        input_state = keras.Input(shape=(self.state_space,))
-        h1 = layers.Dense(128, activation='relu')(input_state)
-        h2 = layers.Dense(128, activation='relu')(h1)
-        h3 = layers.Dense(64, activation='relu')(h2)
-        h4 = layers.Dense(32, activation='relu')(h3)
-        h5 = layers.Dense(16, activation='relu')(h4)
+        if self.input_image:
+            image_input = keras.Input(shape=self.input_shape)
+            x1 = layers.Conv2D(filters=16, kernel_size=(3, 3), activation='relu')(image_input)
+            x1 = layers.Conv2D(filters=16, kernel_size=(3, 3), activation='relu')(x1)
+            x1 = layers.MaxPool2D(pool_size=(2, 2))(x1)
+            x2 = layers.Conv2D(filters=32, kernel_size=(3, 3), activation='relu')(x1)
+            x2 = layers.Conv2D(filters=32, kernel_size=(3, 3), activation='relu')(x2)
+            x2 = layers.MaxPool2D(pool_size=(2, 2))(x2)
+            x3 = layers.Conv2D(filters=64, kernel_size=(3, 3), activation='relu')(x2)
+            x3 = layers.Conv2D(filters=64, kernel_size=(3, 3), activation='relu')(x3)
+            x3 = layers.MaxPool2D(pool_size=(2, 2))(x3)
+            x4 = layers.Conv2D(filters=128, kernel_size=(3, 3), activation='relu')(x3)
+            x4 = layers.Conv2D(filters=128, kernel_size=(3, 3), activation='relu')(x4)
+            x4 = layers.MaxPool2D(pool_size=(2, 2))(x4)
+            x5 = layers.Conv2D(filters=256, kernel_size=(3, 3), activation='relu')(x4)
+            x5 = layers.Conv2D(filters=256, kernel_size=(3, 3), activation='relu')(x5)
+            x6 = layers.Flatten()(x5)
+            x6 = layers.Dropout(0.3)(x6)
+            x6 = layers.Dense(512)(x6)
+            x7 = layers.Dropout(0.3)(x6)
+            x7 = layers.Dense(64)(x7)
+            x8 = layers.Dropout(0.3)(x7)
 
-        value = layers.Dense(self.action_space)(h5)
-        value = tf.subtract(value, tf.reduce_mean(value))   # 减去均值,使得网络更倾向与更新状态的值
-        state_value = layers.Dense(1)(h5)  # 状态的值
+            v = layers.Dense(1)(x8)
+            x8 = layers.Dense(self.action_space)(x8)
+            q = tf.subtract(x8, tf.reshape(tf.reduce_mean(x8, axis=1), [-1, 1]))
+            out = tf.add(q, v)
 
-        out = tf.add(value, state_value)
+            model = keras.Model(inputs=image_input, outputs=out)
+        else:
+            # 构建网络
+            input_state = keras.Input(shape=self.input_shape)
+            h1 = layers.Dense(128, activation='relu')(input_state)
+            h2 = layers.Dense(128, activation='relu')(h1)
+            h3 = layers.Dense(64, activation='relu')(h2)
+            h4 = layers.Dense(32, activation='relu')(h3)
+            h5 = layers.Dense(16, activation='relu')(h4)
 
-        # 定义网络
-        model = keras.Model(inputs=input_state, outputs=out)
+            value = layers.Dense(self.action_space)(h5)
+            value = tf.subtract(value, tf.reshape(tf.reduce_mean(value,axis=1),[-1,1]))  # 减去均值,使得网络更倾向与更新状态的值
+            state_value = layers.Dense(1)(h5)  # 状态的值
 
+            out = tf.add(value, state_value)
+            # 定义网络
+            model = keras.Model(inputs=input_state, outputs=out)
+        #keras.utils.plot_model(model, './output/Q_netwrok.jpg', show_shapes=True)
         return model
 
     # 根据状态采取动作
     def action(self, state):
         if random.random() < self.e_greedy:
-            state = tf.reshape(state, (1,-1))   # reshape   第0维是样本数
+            if self.input_image:
+                state = tf.reshape(state, [1, self.input_shape[0], self.input_shape[1], self.input_shape[2]])
+            else:
+                state = tf.reshape(state, (1,-1))   # reshape   第0维是样本数
             values = self.network(state)
             action = int(tf.argmax(values,axis=1))# 选择Q最大的动作
         else:
@@ -111,6 +149,7 @@ class Agent:
             # 随机取batch_size个样本
             index = [random.randint(0, size-1) for n in range(self.batch_size)]
 
+
         # 根据index抽取样本
         for i in index:
             batch_state.append(batch_memory[i][0])   # s
@@ -118,11 +157,13 @@ class Agent:
             batch_reward.append(batch_memory[i][2])          # r
             batch_next_state.append(batch_memory[i][3])      # s+1
 
-        self.batch_state = np.array(batch_state).reshape((self.batch_size, -1))
+        self.batch_state = np.array(batch_state)
         self.batch_action = np.array(batch_action).reshape([-1, ])  # 一维  (0 ~ self.action_space-1)
         self.batch_reward = np.array(batch_reward).reshape([-1, ])   # 一维
-        self.batch_next_state = np.array(batch_next_state).reshape((self.batch_size, -1))
+        self.batch_next_state = np.array(batch_next_state)
 
+
+        # assert self.batch_state[0].shape == self.input_shape, "input shape error"
 
     # 梯度下降更新Q_net
     def update(self):
@@ -204,12 +245,8 @@ class Agent:
                     reward = 0
                     for n, j in enumerate(range(i, self.multi_step_num)):
                         reward += pow(self.reward_decay, n) * self.multi_step_buff[j][2]    # 累加将来若干步的reward\
-                    if i <= self.multi_step_num-1:
-                        self.save_experience(self.multi_step_buff[i][0], self.multi_step_buff[i][1], reward,
-                                             self.multi_step_buff[self.multi_step_num-1][3], self.multi_step_buff[self.multi_step_num-1][4])
-                    else:
-                        self.save_experience(self.multi_step_buff[i][0], self.multi_step_buff[i][1], reward,
-                                             self.multi_step_buff[self.multi_step_num-1][3], self.multi_step_buff[self.multi_step_num-1][4])
+                    self.save_experience(self.multi_step_buff[i][0], self.multi_step_buff[i][1], reward,
+                                            self.multi_step_buff[self.multi_step_num-1][3], self.multi_step_buff[self.multi_step_num-1][4])
                 self.multi_step_buff = []  # 清空
             else:  # 存入一个经验
                 reward = 0
