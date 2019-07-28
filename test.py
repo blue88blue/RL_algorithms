@@ -1,5 +1,6 @@
 # test multi-step
 from RL_algorithms import *
+import tensorflow as tf
 import random
 import gym
 import numpy as np
@@ -50,17 +51,43 @@ def save_reward_data(r, file_name):
     plt.savefig('./output/'+file_name+'.jpg')  # 保存reward曲线
 
 
+def np_choice():
+    p = np.array([[0.1, 0, 0.3, 0.5, 0.1]])
+    print(p.shape)
+    p = np.squeeze(p)
+
+    print(p.shape)
+
+    x = np.random.choice(5, 1000, p=p)
+    sum = np.zeros([5])
+    print(sum)
+    for i in range(1000):
+        if x[i] == 0:
+            sum[0] += 1
+        elif x[i] == 1:
+              sum[1] += 1
+        elif x[i] == 2:
+              sum[2] += 1
+        elif x[i] == 3:
+              sum[3] += 1
+        elif x[i] == 4:
+              sum[4] += 1
+    print(sum)
+
+
+
+
 
 if __name__ == "__main__":
-    multi_step_test()
+    #multi_step_test()
 
-    env_space('CarRacing-v0')
+    env_space('Pong-v0')
+    #np_choice()
 
     #save_reward_data(r, 'data')
 
 
-
-
-
+    # collect_round_data_test()
+    print(tf.math.log(0.5))
 
 

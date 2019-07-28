@@ -20,7 +20,7 @@ class Agent:
                  state_space=2,
                  action_space=3,
                  e_greedy=0.8,
-                 reward_decay=0.9,
+                 reward_decay=0.99,
                  learning_rate=1e-3,
                  weight_save_dir="./weight/Q_net.h5",
                  priority_replay=True,
@@ -72,29 +72,14 @@ class Agent:
     def build_model(self):
         if self.input_image:
             image_input = keras.Input(shape=self.input_shape)
-            x1 = layers.Conv2D(filters=16, kernel_size=(3, 3), activation='relu')(image_input)
-            x1 = layers.Conv2D(filters=16, kernel_size=(3, 3), activation='relu')(x1)
-            x1 = layers.MaxPool2D(pool_size=(2, 2))(x1)
-            x2 = layers.Conv2D(filters=32, kernel_size=(3, 3), activation='relu')(x1)
-            x2 = layers.Conv2D(filters=32, kernel_size=(3, 3), activation='relu')(x2)
-            x2 = layers.MaxPool2D(pool_size=(2, 2))(x2)
-            x3 = layers.Conv2D(filters=64, kernel_size=(3, 3), activation='relu')(x2)
-            x3 = layers.Conv2D(filters=64, kernel_size=(3, 3), activation='relu')(x3)
-            x3 = layers.MaxPool2D(pool_size=(2, 2))(x3)
-            x4 = layers.Conv2D(filters=128, kernel_size=(3, 3), activation='relu')(x3)
-            x4 = layers.Conv2D(filters=128, kernel_size=(3, 3), activation='relu')(x4)
-            x4 = layers.MaxPool2D(pool_size=(2, 2))(x4)
-            x5 = layers.Conv2D(filters=256, kernel_size=(3, 3), activation='relu')(x4)
-            x5 = layers.Conv2D(filters=256, kernel_size=(3, 3), activation='relu')(x5)
-            x6 = layers.Flatten()(x5)
-            x6 = layers.Dropout(0.3)(x6)
-            x6 = layers.Dense(512)(x6)
-            x7 = layers.Dropout(0.3)(x6)
-            x7 = layers.Dense(64)(x7)
-            x8 = layers.Dropout(0.3)(x7)
+            h = layers.Conv2D(filters=16, kernel_size=(8, 8), strides=(4,4), activation='relu')(image_input)
+            h = layers.MaxPool2D()(h)
+            h = layers.Conv2D(filters=64, kernel_size=(6, 6), strides=(2,2), activation='relu')(h)
+            h = layers.Flatten()(h)
+            h = layers.Dense(256)(h)
 
-            v = layers.Dense(1)(x8)
-            x8 = layers.Dense(self.action_space)(x8)
+            v = layers.Dense(1)(h)
+            x8 = layers.Dense(self.action_space)(h)
             q = tf.subtract(x8, tf.reshape(tf.reduce_mean(x8, axis=1), [-1, 1]))
             out = tf.add(q, v)
 
@@ -115,7 +100,7 @@ class Agent:
             out = tf.add(value, state_value)
             # 定义网络
             model = keras.Model(inputs=input_state, outputs=out)
-        #keras.utils.plot_model(model, './output/Q_netwrok.jpg', show_shapes=True)
+        keras.utils.plot_model(model, './output/Q_netwrok.jpg', show_shapes=True)
         return model
 
     # 根据状态采取动作
@@ -175,7 +160,7 @@ class Agent:
         target_action = tf.reshape(target_action, (self.batch_size, 1))
 
         # 从target_Q_net预测的value中取出 Q_net提案的action对应的Q
-        idx = np.array([i for i in range(self.batch_size)]).reshape([-1, 1])
+        idx = np.arange(self.batch_size).reshape([-1, 1])
         idx = tf.concat([idx, target_action], axis=1)  # 索引 [ [0,2],[1,6],[2,4],...,[batch_size, (0~action_space)] ]
 
         value = self.targetQ_network(self.batch_next_state)  # 下个状态的Q值

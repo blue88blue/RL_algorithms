@@ -5,12 +5,17 @@ from RL_algorithms import *
 import matplotlib.pyplot as plt
 import pandas as pd
 import time
+from datetime import datetime
 
-def train(game_name, num=500):
+def train(game_name, num=500, logdir='log/'):
+
+    # tensorboard
+    current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+    train_summary_writer = tf.summary.create_file_writer('./output/log/'+current_time)
+    train_summary_writer.set_as_default()
 
     env = gym.make(game_name)  # 游戏环境
-
-    a = Agent(input_shape=[210, 160, 3], action_space=4, e_greedy=0.8, )  # 初始化智能体
+    a = Agent(input_shape=[210, 160, 3], action_space=6, e_greedy=0.8, )  # 初始化智能体
 
     train_reward = []
     train_loss =[]
@@ -25,7 +30,7 @@ def train(game_name, num=500):
             tt1 = time.time()
             step += 1
             # 刷新画面
-            #env.render()
+            env.render()
 
             # agent采取动作
 
@@ -36,13 +41,6 @@ def train(game_name, num=500):
             # 环境返回下一个状态，以及得分
             next_state, reward, done, info = env.step(action)
 
-            '''
-            position , v = next_state
-            if position > -0.5:
-                reward = 100 * np.abs(v) + 5* (0.5+position)
-            else:
-                reward = 100 * np.abs(v)
-            '''
             reward_show.append(reward)
 
             # 将回忆存放在buff中
@@ -69,6 +67,10 @@ def train(game_name, num=500):
                 print('\nround:%s ----time:%.2f ----loss:%s ----reward:%s' % (round, t, float(loss), float(sum(reward_show))))
                 train_reward.append([round, float(sum(reward_show))])
 
+                # tensorboard
+                #train_reward_fn(sum(reward_show))
+                tf.summary.scalar('reward', data=sum(reward_show), step=round)
+
                 time1 = time.time()
                 break
 
@@ -90,10 +92,6 @@ def save_reward_data(r, file_name):
     reward_df = pd.DataFrame(r)
     reward_df.to_csv('./output/'+file_name+'.csv')  # 保存csv
 
-    r_p = np.transpose(np.asarray(r))
-    plt.plot(r_p[0], r_p[1], color='red')
-    plt.savefig('./output/'+file_name+'.jpg')  # 保存reward曲线
-
 
 
 # 测试
@@ -102,7 +100,7 @@ def test_in_training(environment, agent):
     state = environment.reset()
     r = []
     while True:  # 回合未结束
-        #environment.render()
+        environment.render()
         # agent采取动作
         state = state / 255
         state = state.astype(np.float32)
@@ -124,7 +122,7 @@ def test_in_training(environment, agent):
 def test(game_name, trained_model_dir="./weight/Q_net.h5"):
     env = gym.make(game_name)  # 游戏环境
 
-    atest = Agent(input_shape=[210, 160, 3], action_space=4, trained_model_dir=trained_model_dir, e_greedy=1)  # 初始化智能体
+    atest = Agent(input_shape=[210, 160, 3], action_space=6, trained_model_dir=trained_model_dir, e_greedy=1)  # 初始化智能体
     # 测试
     state = env.reset()
     r = []
@@ -161,9 +159,9 @@ if __name__ == '__main__':
     args = parse_arguments(sys.argv[1:])
 
     if args.mode == 'train':
-        train('Breakout-v0')
+        train('Pong-v0')
     else:
-        r = test('Breakout-v0')
+        r = test('Pong-v0')
         print(r)
 
 
